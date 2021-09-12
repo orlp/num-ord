@@ -8,6 +8,6 @@ license = "Zlib"
 repository = "https://github.com/orlp/num-ord"
 readme = "README.md"
 keywords = ["compare", "comparison", "number", "numeric", "type"]
-categories = ["algorithm", "no-std", "mathematics"]
+categories = ["algorithms", "no-std", "mathematics"]
 
 [dependencies]
