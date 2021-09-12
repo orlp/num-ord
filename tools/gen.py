@@ -95,12 +95,9 @@ if __name__ == "__main__":
                 if a < b:
                     c = common_type(a, b, types)
                     if c is not None:
-                        print(f"{str(a):>4}, {str(b):>4} => {str(c):>4}; {str(b):>4}, {str(a):>4} => {str(c):>4};")
+                        print(f"{str(a):>4}, {str(b):>4} => {str(c):>4};")
                     else:
                         unhandled.append((a, b))
-                elif a == b:
-                    print(f"{str(a):>4}, {str(a):>4} => {str(a):>4};")
-
 
 
         for a, b in unhandled:

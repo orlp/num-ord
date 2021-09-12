@@ -1,9 +1,54 @@
-use core::cmp::Ordering;
-use core::convert::TryInto;
+#![no_std]
+#![warn(
+    invalid_html_tags,
+    missing_debug_implementations,
+    trivial_casts,
+    unused_lifetimes,
+    unused_import_braces
+)]
+#![deny(missing_docs, unaligned_references)]
 
-#[derive(Copy, Clone, Debug, Hash)]
+//! # num-ord
+//! 
+//! This crate provides a numerically ordered wrapper type, [`NumOrd`]. This
+//! type implements the [`PartialOrd`] and [`PartialEq`] traits for all the
+//! possible combinations of built-in integer types, in a mathematically correct
+//! manner without overflows.
+//! 
+//! For example, comparing an `x: i64` and a `y: f64` is actually quite
+//! difficult.  Neither `(x as f64) < y` nor `x < (y as i64)` is correct. But
+//! `NumOrd(x) < NumOrd(y)` is:
+//! ```rust
+//! use num_ord::NumOrd;
+//!
+//! let x = 3_i64;
+//! let y = 3.5_f64;
+//! assert_eq!(x < (y as i64), false); // Incorrect.
+//! assert_eq!(NumOrd(x) < NumOrd(y), true); // Correct.
+//! 
+//! let x = 9007199254740993_i64;
+//! let y = 9007199254740992_f64;
+//! assert_eq!(format!("{}", y), "9007199254740992"); // No rounded constant trickery!
+//! assert_eq!((x as f64) <= y, true); // Incorrect.
+//! assert_eq!(NumOrd(x) <= NumOrd(y), false); // Correct.
+//! ```
+
+use core::cmp::Ordering;
+
+
+/// A numerically ordered wrapper type.
+/// 
+/// See the crate docs for more details.
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct NumOrd<T>(pub T);
+
+
+macro_rules! common_type_impl_body {
+    ($Lhs:ty, $Rhs:ty, $CommonT:ty, $lhs:expr, $rhs:expr, $op:ident, $less:expr, $greater:expr, $nan:expr) => {{
+        ($lhs as $CommonT).$op(&($rhs as $CommonT))
+    }};
+}
 
 macro_rules! int_float_impl_body {
     ($IntT:ty, $FloatT:ty, $_UnusedT:ty, $lhs:expr, $rhs:expr, $op:ident, $less:expr, $greater:expr, $nan:expr) => {{
@@ -138,128 +183,65 @@ apply_impl_body!(int_uint_impl_body, i64, u128, ());
 apply_impl_body!(int_uint_impl_body, i128, u128, ());
 
 
-pub trait CommonNumType<T>
-where
-    Self: Sized,
-{
-    type Common: From<T> + From<Self>;
-
-    fn into_common_type(self) -> Self::Common {
-        self.into()
-    }
-}
-
 macro_rules! impl_common_type {
     ($($T:ty, $U:ty => $C:ty;)*) => {$(
-        impl CommonNumType<$T> for $U {
-            type Common = $C;
-        }
+        apply_impl_body!(common_type_impl_body, $T, $U, $C);
     )*}
 }
 
 impl_common_type! {
     // See tools/gen.py.
-      u8,   u8 =>   u8;
-      u8,   i8 =>  i16;   i8,   u8 =>  i16;
-      u8,  u16 =>  u16;  u16,   u8 =>  u16;
-      u8,  i16 =>  i16;  i16,   u8 =>  i16;
-      u8,  u32 =>  u32;  u32,   u8 =>  u32;
-      u8,  i32 =>  i32;  i32,   u8 =>  i32;
-      u8,  u64 =>  u64;  u64,   u8 =>  u64;
-      u8,  i64 =>  i64;  i64,   u8 =>  i64;
-      u8, u128 => u128; u128,   u8 => u128;
-      u8, i128 => i128; i128,   u8 => i128;
-      u8,  f32 =>  f32;  f32,   u8 =>  f32;
-      u8,  f64 =>  f64;  f64,   u8 =>  f64;
-      i8,   i8 =>   i8;
-      i8,  u16 =>  i32;  u16,   i8 =>  i32;
-      i8,  i16 =>  i16;  i16,   i8 =>  i16;
-      i8,  u32 =>  i64;  u32,   i8 =>  i64;
-      i8,  i32 =>  i32;  i32,   i8 =>  i32;
-      i8,  u64 => i128;  u64,   i8 => i128;
-      i8,  i64 =>  i64;  i64,   i8 =>  i64;
-      i8, i128 => i128; i128,   i8 => i128;
-      i8,  f32 =>  f32;  f32,   i8 =>  f32;
-      i8,  f64 =>  f64;  f64,   i8 =>  f64;
-     u16,  u16 =>  u16;
-     u16,  i16 =>  i32;  i16,  u16 =>  i32;
-     u16,  u32 =>  u32;  u32,  u16 =>  u32;
-     u16,  i32 =>  i32;  i32,  u16 =>  i32;
-     u16,  u64 =>  u64;  u64,  u16 =>  u64;
-     u16,  i64 =>  i64;  i64,  u16 =>  i64;
-     u16, u128 => u128; u128,  u16 => u128;
-     u16, i128 => i128; i128,  u16 => i128;
-     u16,  f32 =>  f32;  f32,  u16 =>  f32;
-     u16,  f64 =>  f64;  f64,  u16 =>  f64;
-     i16,  i16 =>  i16;
-     i16,  u32 =>  i64;  u32,  i16 =>  i64;
-     i16,  i32 =>  i32;  i32,  i16 =>  i32;
-     i16,  u64 => i128;  u64,  i16 => i128;
-     i16,  i64 =>  i64;  i64,  i16 =>  i64;
-     i16, i128 => i128; i128,  i16 => i128;
-     i16,  f32 =>  f32;  f32,  i16 =>  f32;
-     i16,  f64 =>  f64;  f64,  i16 =>  f64;
-     u32,  u32 =>  u32;
-     u32,  i32 =>  i64;  i32,  u32 =>  i64;
-     u32,  u64 =>  u64;  u64,  u32 =>  u64;
-     u32,  i64 =>  i64;  i64,  u32 =>  i64;
-     u32, u128 => u128; u128,  u32 => u128;
-     u32, i128 => i128; i128,  u32 => i128;
-     u32,  f32 =>  f64;  f32,  u32 =>  f64;
-     u32,  f64 =>  f64;  f64,  u32 =>  f64;
-     i32,  i32 =>  i32;
-     i32,  u64 => i128;  u64,  i32 => i128;
-     i32,  i64 =>  i64;  i64,  i32 =>  i64;
-     i32, i128 => i128; i128,  i32 => i128;
-     i32,  f32 =>  f64;  f32,  i32 =>  f64;
-     i32,  f64 =>  f64;  f64,  i32 =>  f64;
-     u64,  u64 =>  u64;
-     u64,  i64 => i128;  i64,  u64 => i128;
-     u64, u128 => u128; u128,  u64 => u128;
-     u64, i128 => i128; i128,  u64 => i128;
-     i64,  i64 =>  i64;
-     i64, i128 => i128; i128,  i64 => i128;
-    u128, u128 => u128;
-    i128, i128 => i128;
-     f32,  f32 =>  f32;
-     f32,  f64 =>  f64;  f64,  f32 =>  f64;
-     f64,  f64 =>  f64;
-}
-
-impl<Lhs, Rhs> PartialEq<NumOrd<Rhs>> for NumOrd<Lhs>
-where
-    Lhs: CommonNumType<Rhs> + Copy,
-    Rhs: CommonNumType<Lhs> + Copy,
-    <Lhs as CommonNumType<Rhs>>::Common: PartialEq<<Rhs as CommonNumType<Lhs>>::Common>,
-{
-    fn eq(&self, other: &NumOrd<Rhs>) -> bool {
-        self.0.into_common_type() == other.0.into_common_type()
-    }
-}
-
-impl<Lhs, Rhs> PartialOrd<NumOrd<Rhs>> for NumOrd<Lhs>
-where
-    Lhs: CommonNumType<Rhs> + Copy,
-    Rhs: CommonNumType<Lhs> + Copy,
-    <Lhs as CommonNumType<Rhs>>::Common: PartialOrd<<Rhs as CommonNumType<Lhs>>::Common>,
-{
-    fn partial_cmp(&self, other: &NumOrd<Rhs>) -> Option<Ordering> {
-        self.0.into_common_type().partial_cmp(&other.0.into_common_type())
-    }
-
-    fn lt(&self, other: &NumOrd<Rhs>) -> bool {
-        self.0.into_common_type() < other.0.into_common_type()
-    }
-
-    fn le(&self, other: &NumOrd<Rhs>) -> bool {
-        self.0.into_common_type() <= other.0.into_common_type()
-    }
-
-    fn gt(&self, other: &NumOrd<Rhs>) -> bool {
-        self.0.into_common_type() > other.0.into_common_type()
-    }
-
-    fn ge(&self, other: &NumOrd<Rhs>) -> bool {
-        self.0.into_common_type() >= other.0.into_common_type()
-    }
+      u8,   i8 =>  i16;
+      u8,  u16 =>  u16;
+      u8,  i16 =>  i16;
+      u8,  u32 =>  u32;
+      u8,  i32 =>  i32;
+      u8,  u64 =>  u64;
+      u8,  i64 =>  i64;
+      u8, u128 => u128;
+      u8, i128 => i128;
+      u8,  f32 =>  f32;
+      u8,  f64 =>  f64;
+      i8,  u16 =>  i32;
+      i8,  i16 =>  i16;
+      i8,  u32 =>  i64;
+      i8,  i32 =>  i32;
+      i8,  u64 => i128;
+      i8,  i64 =>  i64;
+      i8, i128 => i128;
+      i8,  f32 =>  f32;
+      i8,  f64 =>  f64;
+     u16,  i16 =>  i32;
+     u16,  u32 =>  u32;
+     u16,  i32 =>  i32;
+     u16,  u64 =>  u64;
+     u16,  i64 =>  i64;
+     u16, u128 => u128;
+     u16, i128 => i128;
+     u16,  f32 =>  f32;
+     u16,  f64 =>  f64;
+     i16,  u32 =>  i64;
+     i16,  i32 =>  i32;
+     i16,  u64 => i128;
+     i16,  i64 =>  i64;
+     i16, i128 => i128;
+     i16,  f32 =>  f32;
+     i16,  f64 =>  f64;
+     u32,  i32 =>  i64;
+     u32,  u64 =>  u64;
+     u32,  i64 =>  i64;
+     u32, u128 => u128;
+     u32, i128 => i128;
+     u32,  f32 =>  f64;
+     u32,  f64 =>  f64;
+     i32,  u64 => i128;
+     i32,  i64 =>  i64;
+     i32, i128 => i128;
+     i32,  f32 =>  f64;
+     i32,  f64 =>  f64;
+     u64,  i64 => i128;
+     u64, u128 => u128;
+     u64, i128 => i128;
+     i64, i128 => i128;
+     f32,  f64 =>  f64;
 }
