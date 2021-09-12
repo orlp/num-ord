@@ -9,12 +9,12 @@
 #![deny(missing_docs, unaligned_references)]
 
 //! # num-ord
-//! 
+//!
 //! This crate provides a numerically ordered wrapper type, [`NumOrd`]. This
 //! type implements the [`PartialOrd`] and [`PartialEq`] traits for all the
 //! possible combinations of built-in integer types, in a mathematically correct
 //! manner without overflows.
-//! 
+//!
 //! For example, comparing an `x: i64` and a `y: f64` is actually quite
 //! difficult.  Neither `(x as f64) < y` nor `x < (y as i64)` is correct. But
 //! `NumOrd(x) < NumOrd(y)` is:
@@ -25,7 +25,7 @@
 //! let y = 3.5_f64;
 //! assert_eq!(x < (y as i64), false); // Incorrect.
 //! assert_eq!(NumOrd(x) < NumOrd(y), true); // Correct.
-//! 
+//!
 //! let x = 9007199254740993_i64;
 //! let y = 9007199254740992_f64;
 //! assert_eq!(format!("{}", y), "9007199254740992"); // No rounded constant trickery!
@@ -37,7 +37,7 @@ use core::cmp::Ordering;
 
 
 /// A numerically ordered wrapper type.
-/// 
+///
 /// See the crate docs for more details.
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
