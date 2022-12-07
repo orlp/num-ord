@@ -11,3 +11,6 @@ keywords = ["compare", "comparison", "number", "numeric", "type"]
 categories = ["algorithms", "no-std", "mathematics"]
 
 [dependencies]
+
+[dev-dependencies]
+rug = "1.18.0"
