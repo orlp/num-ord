@@ -1,6 +1,6 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![warn(
-    invalid_html_tags,
+    rustdoc::invalid_html_tags,
     missing_debug_implementations,
     trivial_casts,
     unused_lifetimes,
@@ -35,14 +35,12 @@
 
 use core::cmp::Ordering;
 
-
 /// A numerically ordered wrapper type.
 ///
 /// See the crate docs for more details.
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct NumOrd<T>(pub T);
-
 
 macro_rules! common_type_impl_body {
     ($Lhs:ty, $Rhs:ty, $CommonT:ty, $lhs:expr, $rhs:expr, $op:ident, $less:expr, $greater:expr, $nan:expr) => {{
@@ -182,7 +180,6 @@ apply_impl_body!(int_uint_impl_body, i32, u128, ());
 apply_impl_body!(int_uint_impl_body, i64, u128, ());
 apply_impl_body!(int_uint_impl_body, i128, u128, ());
 
-
 macro_rules! impl_common_type {
     ($($T:ty, $U:ty => $C:ty;)*) => {$(
         apply_impl_body!(common_type_impl_body, $T, $U, $C);
@@ -244,4 +241,159 @@ impl_common_type! {
      u64, i128 => i128;
      i64, i128 => i128;
      f32,  f64 =>  f64;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NumOrd;
+    use rug::ops::Pow as _;
+    use rug::{Integer, Rational};
+
+    struct NumType<T> {
+        pub interesting_values: Vec<Rational>,
+        pub convert_exactly: fn(&Rational) -> Option<T>,
+    }
+
+    fn compare<T1, T2>(t1: &NumType<T1>, t2: &NumType<T2>)
+    where
+        T1: 'static + std::fmt::Display + Copy,
+        T2: 'static + std::fmt::Display + Copy,
+        NumOrd<T1>: PartialOrd<NumOrd<T2>>,
+    {
+        // Ordering between equal types needn't be tested
+        if std::any::TypeId::of::<T1>() == std::any::TypeId::of::<T2>() {
+            return;
+        }
+
+        let mut interesting_values = t1.interesting_values.iter().collect::<Vec<_>>();
+        interesting_values.extend(&t2.interesting_values);
+        interesting_values.sort_unstable();
+        interesting_values.dedup();
+
+        for r1 in &interesting_values {
+            for r2 in &interesting_values {
+                if let (Some(v1), Some(v2)) = ((t1.convert_exactly)(r1), (t2.convert_exactly)(r2)) {
+                    let expected_ordering = r1.partial_cmp(r2).unwrap();
+                    let got_ordering = NumOrd(v1).partial_cmp(&NumOrd(v2)).unwrap();
+
+                    if expected_ordering != got_ordering {
+                        panic!(
+                            "{}_{}.cmp({}_{}) was {:?}, expected {:?}. (Raw values: {}, {})",
+                            v1,
+                            std::any::type_name::<T1>(),
+                            v2,
+                            std::any::type_name::<T2>(),
+                            got_ordering,
+                            expected_ordering,
+                            r1,
+                            r2,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn to_integer(x: &Rational) -> Option<&Integer> {
+        if *x.denom() == 1 {
+            Some(x.numer())
+        } else {
+            None
+        }
+    }
+    fn interesting_values(bases: &[&Rational]) -> Vec<Rational> {
+        let one_half = Rational::from((1, 2));
+
+        let mut vals = Vec::new();
+        for &val in bases {
+            vals.push(val.clone());
+            vals.push((val + &one_half).into());
+            vals.push((val - &one_half).into());
+            vals.push((val + 1_u32).into());
+            vals.push((val - 1_u32).into());
+        }
+        vals
+    }
+    fn two_pow(exp: u32) -> Rational {
+        Rational::from(2).pow(exp)
+    }
+    fn make_unsigned<T>(bits: u32, convert_exactly: fn(&Rational) -> Option<T>) -> NumType<T> {
+        let min = Rational::from(0);
+        let max = two_pow(bits) - 1_u32;
+        NumType {
+            interesting_values: interesting_values(&[&min, &max]),
+            convert_exactly,
+        }
+    }
+    fn make_signed<T>(bits: u32, convert_exactly: fn(&Rational) -> Option<T>) -> NumType<T> {
+        let min = -two_pow(bits - 1);
+        let max = two_pow(bits - 1) - 1_u32;
+        NumType {
+            interesting_values: interesting_values(&[&min, &max]),
+            convert_exactly,
+        }
+    }
+
+    #[test]
+    fn test_everything() {
+        macro_rules! compare_all_combinations {
+            ($($type:ty, $type_data:ident;)*) => {
+                macro_rules! compare_all_against {
+                    ($given_type:ty, $given_type_data:ident) => {
+                        // Compare all types against $given_type
+                        $( compare::<$type, $given_type>(&$type_data, &$given_type_data); )*
+                    };
+                }
+                // For each type, compare all other types against it
+                $( compare_all_against!($type, $type_data); )*
+            };
+        }
+
+        let u8_data = make_unsigned(8, |x| to_integer(x).and_then(|i| i.to_u8()));
+        let u16_data = make_unsigned(16, |x| to_integer(x).and_then(|i| i.to_u16()));
+        let u32_data = make_unsigned(32, |x| to_integer(x).and_then(|i| i.to_u32()));
+        let u64_data = make_unsigned(64, |x| to_integer(x).and_then(|i| i.to_u64()));
+        let u128_data = make_unsigned(128, |x| to_integer(x).and_then(|i| i.to_u128()));
+        let i8_data = make_signed(8, |x| to_integer(x).and_then(|i| i.to_i8()));
+        let i16_data = make_signed(16, |x| to_integer(x).and_then(|i| i.to_i16()));
+        let i32_data = make_signed(32, |x| to_integer(x).and_then(|i| i.to_i32()));
+        let i64_data = make_signed(64, |x| to_integer(x).and_then(|i| i.to_i64()));
+        let i128_data = make_signed(128, |x| to_integer(x).and_then(|i| i.to_i128()));
+        let f32_data = NumType {
+            interesting_values: interesting_values(&[
+                &-two_pow(24),  // int min
+                &two_pow(24),   // int max
+                &-two_pow(127), // float min
+                &two_pow(127),  // float max
+            ]),
+            convert_exactly: |r| {
+                (Rational::from_f32(r.to_f32()).as_ref() == Some(r)).then(|| r.to_f32())
+            },
+        };
+        let f64_data = NumType {
+            interesting_values: interesting_values(&[
+                &-two_pow(53),   // int min
+                &two_pow(53),    // int max
+                &-two_pow(1023), // float min
+                &two_pow(1023),  // float max
+            ]),
+            convert_exactly: |r| (r.to_f64() == *r).then(|| r.to_f64()),
+        };
+
+        // Verify correct ordering for all interesting values of all number type combinations
+        compare_all_combinations!(
+            u8, u8_data;
+            u16, u16_data;
+            u32, u32_data;
+            u64, u64_data;
+            u128, u128_data;
+            i8, i8_data;
+            i16, i16_data;
+            i32, i32_data;
+            i64, i64_data;
+            i128, i128_data;
+            f32, f32_data;
+            f64, f64_data;
+        );
+    }
 }
